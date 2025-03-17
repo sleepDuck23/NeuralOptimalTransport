@@ -139,3 +139,57 @@ class StandardNormalScaler(Transformer):
             batch -= self.mean
             batch @= self.inv_multiplier
         return batch
+    
+# ---------------- 1. 5D Gaussian Mixture Sampler ----------------
+class Mix5DGaussiansSampler(Sampler):
+    def __init__(self, num_components=5, std=1, r=10, dim=5, device='cuda'):
+        super(Mix5DGaussiansSampler, self).__init__(device=device)
+        assert dim == 5  # Ensure it's a 5D distribution
+        self.dim = dim
+        self.std, self.r = std, r
+        self.num_components = num_components
+        
+        # Randomly initialize Gaussian component centers
+        self.centers = torch.randn(num_components, dim, device=self.device) * r
+
+    def sample(self, batch_size=10):
+        with torch.no_grad():
+            batch = torch.randn(batch_size, self.dim, device=self.device) * self.std
+            indices = torch.randint(0, self.num_components, (batch_size,), device=self.device)
+            batch += self.centers[indices]  # Shift by selected Gaussian component center
+        return batch
+
+# ---------------- 2. 5D Heavy-Tailed Distribution (Student's t-distribution) ----------------
+class HeavyTailed5DSampler(Sampler):
+    def __init__(self, df=2, dim=5, device='cuda'):
+        """Heavy-tailed distribution using Student's t-distribution"""
+        super(HeavyTailed5DSampler, self).__init__(device=device)
+        self.df = df  # Degrees of freedom
+        self.dim = dim
+
+    def sample(self, batch_size=10):
+        """Generate samples from a 5D heavy-tailed Student's t-distribution"""
+        with torch.no_grad():
+            batch = torch.from_numpy(np.random.standard_t(self.df, size=(batch_size, self.dim))).float().to(self.device)
+        return batch
+
+# ---------------- 3. 5D Data on a Low-Dimensional Manifold (Swiss Roll in 5D) ----------------
+class SwissRoll5DSampler(Sampler):
+    def __init__(self, noise=0.5, dim=5, device='cuda'):
+        """Swiss roll data with intrinsic 2D structure embedded in 5D"""
+        super(SwissRoll5DSampler, self).__init__(device=device)
+        assert dim == 5  # Ensure it’s a 5D manifold
+        self.noise = noise
+        self.dim = dim
+
+    def sample(self, batch_size=10):
+        """Generate Swiss roll data and embed in 5D"""
+        with torch.no_grad():
+            t = 3 * np.pi * (1 + 2 * np.random.rand(batch_size))  # 2D Swiss roll intrinsic structure
+            x = t * np.cos(t)
+            y = t * np.sin(t)
+            z = 5 * np.random.rand(batch_size)  # Adding depth in 3D
+            extra_dims = np.random.randn(batch_size, 2) * self.noise  # Extra dimensions with noise
+            
+            batch = np.column_stack((x, y, z, extra_dims)) / 10  # Normalize
+            return torch.tensor(batch, dtype=torch.float32, device=self.device)
