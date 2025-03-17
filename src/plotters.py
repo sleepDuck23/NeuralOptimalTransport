@@ -1,4 +1,3 @@
-import matplotlib
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import collections as mc
@@ -8,6 +7,7 @@ import seaborn as sns
 from sklearn.decomposition import PCA
 import torch
 import gc
+from mpl_toolkits.mplot3d import Axes3D
 
 def plot_images(X, Y, T):
     freeze(T);
@@ -341,89 +341,118 @@ def plot_1D_discrete(X_sampler, Y_sampler, num_samples=1024):
     
     return fig, axes
 
-# 5D implementation
-def plot_generated_2D_PCA(data_5D, labels=None):
-    """
-    Reduce 5D data to 2D using PCA and plot the results.
-    :param data_5D: numpy array of shape (n_samples, 5)
-    :param labels: Optional, numpy array of shape (n_samples,) for coloring points
-    """
-    pca = PCA(n_components=2)
-    data_2D = pca.fit_transform(data_5D)
+def plot_bar_and_stochastic_3D(X_sampler, Y_sampler, T, ZD, Z_STD, plot_discrete=True):
+    DIM = 3
+    freeze(T)
     
-    plt.figure(figsize=(8, 6))
-    scatter = plt.scatter(data_2D[:, 0], data_2D[:, 1], c=labels, cmap='viridis', alpha=0.7)
-    plt.xlabel('PCA Component 1')
-    plt.ylabel('PCA Component 2')
-    plt.title('PCA Projection of 5D Data to 2D')
-    if labels is not None:
-        plt.colorbar(scatter, label='Labels')
-    plt.show()
+    DISCRETE_OT = 1024
+    
+    PLOT_X_SIZE_LEFT = 64
+    PLOT_Z_COMPUTE_LEFT = 256
 
-def plot_generated_2D_projection(data_5D, dim_x, dim_y, labels=None):
-    """
-    Directly project 5D data to 2D using specified dimensions.
-    :param data_5D: numpy array of shape (n_samples, 5)
-    :param dim_x: int, index of the first dimension to use (0-4)
-    :param dim_y: int, index of the second dimension to use (0-4)
-    :param labels: Optional, numpy array of shape (n_samples,) for coloring points
-    """
-    data_2D = data_5D[:, [dim_x, dim_y]]
+    PLOT_X_SIZE_RIGHT = 32
+    PLOT_Z_SIZE_RIGHT = 4
     
-    plt.figure(figsize=(8, 6))
-    scatter = plt.scatter(data_2D[:, 0], data_2D[:, 1], c=labels, cmap='viridis', alpha=0.7)
-    plt.xlabel(f'Dimension {dim_x}')
-    plt.ylabel(f'Dimension {dim_y}')
-    plt.title(f'Projection of 5D Data onto Dimensions {dim_x} & {dim_y}')
-    if labels is not None:
-        plt.colorbar(scatter, label='Labels')
-    plt.show()
+    assert PLOT_Z_COMPUTE_LEFT >= PLOT_Z_SIZE_RIGHT
+    assert PLOT_X_SIZE_LEFT >= PLOT_X_SIZE_RIGHT
+    assert DISCRETE_OT >= PLOT_X_SIZE_LEFT
+    
+    fig = plt.figure(figsize=(15, 5.2), dpi=150)
+    axes = [fig.add_subplot(131, projection='3d'), 
+            fig.add_subplot(132, projection='3d'), 
+            fig.add_subplot(133, projection='3d')]
+    
+    for ax in axes:
+        ax.set_xlim(-2.5, 2.5)
+        ax.set_ylim(-2.5, 2.5)
+        ax.set_zlim(-2.5, 2.5)
+    
+    axes[0].set_title(r'Map $x\mapsto \overline{T}(x)=\int_{\mathcal{Z}}T(x,z)d\mathbb{S}(z)$', fontsize=16, pad=10)
+    axes[1].set_title(r'Stochastic map $x\mapsto T(x,z)$', fontsize=16, pad=10)    
+    axes[2].set_title(r'DOT map $x\mapsto \int y d\pi^{*}(y|x)$', fontsize=16, pad=10)
+    
+    # Computing and plotting discrete OT bar map
+    X, Y = X_sampler.sample(DISCRETE_OT), Y_sampler.sample(DISCRETE_OT)
+    
+    if plot_discrete:
+        X_np, Y_np = X.cpu().numpy(), Y.cpu().numpy()
+        pi = ot.weak.weak_optimal_transport(X_np, Y_np)
+        T_X_bar_np = pi @ Y_np * len(X)
 
-def plot_bar_and_stochastic_2D_PCA(data_5D, stochastic_values, labels=None):
-    """
-    Reduce 5D data to 2D using PCA and plot the results with stochastic values.
-    :param data_5D: numpy array of shape (n_samples, 5)
-    :param stochastic_values: numpy array of shape (n_samples,) for bar heights
-    :param labels: Optional, numpy array of shape (n_samples,) for coloring points
-    """
-    pca = PCA(n_components=2)
-    data_2D = pca.fit_transform(data_5D)
+        axes[2].scatter(X_np[:PLOT_X_SIZE_LEFT, 0], X_np[:PLOT_X_SIZE_LEFT, 1], X_np[:PLOT_X_SIZE_LEFT, 2], 
+                        c='darkseagreen', edgecolors='black', label=r'$x\sim\mathbb{P}$')
+        axes[2].scatter(T_X_bar_np[:PLOT_X_SIZE_LEFT, 0], T_X_bar_np[:PLOT_X_SIZE_LEFT, 1], T_X_bar_np[:PLOT_X_SIZE_LEFT, 2], 
+                        c='slateblue', edgecolors='black', marker='v', label=r'$\overline{T}(x)$')
+        axes[2].legend(fontsize=12, loc='lower right', framealpha=1)
     
-    plt.figure(figsize=(8, 6))
-    scatter = plt.scatter(data_2D[:, 0], data_2D[:, 1], c=labels, cmap='viridis', alpha=0.7)
-    plt.xlabel('PCA Component 1')
-    plt.ylabel('PCA Component 2')
-    plt.title('PCA Projection with Stochastic Values')
-    if labels is not None:
-        plt.colorbar(scatter, label='Labels')
-    
-    # Add bar plot effect
-    for i, (x, y, h) in enumerate(zip(data_2D[:, 0], data_2D[:, 1], stochastic_values)):
-        plt.vlines(x, ymin=y, ymax=y + h, colors='red', alpha=0.6)
-    
-    plt.show()
+    # Our method results
+    with torch.no_grad():
+        X = X[:PLOT_X_SIZE_LEFT].reshape(-1, 1, DIM).repeat(1, PLOT_Z_COMPUTE_LEFT, 1)
+        Y = Y[:PLOT_X_SIZE_LEFT]
+        
+        Z = torch.randn(PLOT_X_SIZE_LEFT, PLOT_Z_COMPUTE_LEFT, ZD, device='cuda') * Z_STD
+        XZ = torch.cat([X, Z], dim=2)
+        T_XZ = T(
+            XZ.flatten(start_dim=0, end_dim=1)
+        ).permute(1, 0).reshape(DIM, -1, PLOT_Z_COMPUTE_LEFT).permute(1, 2, 0)
 
-def plot_bar_and_stochastic_2D_projection(data_5D, dim_x, dim_y, stochastic_values, labels=None):
-    """
-    Directly project 5D data to 2D using specified dimensions and plot with stochastic values.
-    :param data_5D: numpy array of shape (n_samples, 5)
-    :param dim_x: int, index of the first dimension to use (0-4)
-    :param dim_y: int, index of the second dimension to use (0-4)
-    :param stochastic_values: numpy array of shape (n_samples,) for bar heights
-    :param labels: Optional, numpy array of shape (n_samples,) for coloring points
-    """
-    data_2D = data_5D[:, [dim_x, dim_y]]
-    
-    plt.figure(figsize=(8, 6))
-    scatter = plt.scatter(data_2D[:, 0], data_2D[:, 1], c=labels, cmap='viridis', alpha=0.7)
-    plt.xlabel(f'Dimension {dim_x}')
-    plt.ylabel(f'Dimension {dim_y}')
-    plt.title(f'Projection onto Dimensions {dim_x} & {dim_y} with Stochastic Values')
-    if labels is not None:
-        plt.colorbar(scatter, label='Labels')
-    
-    # Add bar plot effect
-    for i, (x, y, h) in enumerate(zip(data_2D[:, 0], data_2D[:, 1], stochastic_values)):
-        plt.vlines(x, ymin=y, ymax=y + h, colors='red', alpha=0.6)
-    
-    plt.show()
+    X_np = X[:, 0].cpu().numpy()
+    Y_np = Y.cpu().numpy()
+    T_XZ_np = T_XZ.cpu().numpy()
+
+    axes[0].scatter(X_np[:, 0], X_np[:, 1], X_np[:, 2], c='darkseagreen', edgecolors='black', label=r'$x\sim\mathbb{P}$')
+    axes[0].scatter(T_XZ_np.mean(axis=1)[:, 0], T_XZ_np.mean(axis=1)[:, 1], T_XZ_np.mean(axis=1)[:, 2], 
+                    c='tomato', edgecolors='black', marker='v', label=r'$\overline{T}(x)$')
+    axes[0].legend(fontsize=12, loc='lower right', framealpha=1)
+
+    axes[1].scatter(X_np[:PLOT_X_SIZE_RIGHT, 0], X_np[:PLOT_X_SIZE_RIGHT, 1], X_np[:PLOT_X_SIZE_RIGHT, 2], 
+                    c='darkseagreen', edgecolors='black', label=r'$x\sim\mathbb{P}$')
+    axes[1].scatter(T_XZ_np[:PLOT_X_SIZE_RIGHT, :PLOT_Z_SIZE_RIGHT, 0].flatten(),
+                    T_XZ_np[:PLOT_X_SIZE_RIGHT, :PLOT_Z_SIZE_RIGHT, 1].flatten(),
+                    T_XZ_np[:PLOT_X_SIZE_RIGHT, :PLOT_Z_SIZE_RIGHT, 2].flatten(),
+                    c='wheat', edgecolors='black', label=r'$T(x,z)$')
+    axes[1].legend(fontsize=12, loc='lower right', framealpha=1)
+
+    fig.tight_layout()
+    return fig, axes
+
+def plot_generated_3D(X_sampler, Y_sampler, T, ZD, Z_STD):
+    DIM = 3
+    freeze(T)
+
+    PLOT_SIZE = 512
+    X = X_sampler.sample(PLOT_SIZE).reshape(-1, 1, DIM).repeat(1, 1, 1)
+    Y = Y_sampler.sample(PLOT_SIZE)
+
+    with torch.no_grad():
+        Z = torch.randn(PLOT_SIZE, 1, ZD, device='cuda') * Z_STD
+        XZ = torch.cat([X, Z], dim=2)
+        T_XZ = T(
+            XZ.flatten(start_dim=0, end_dim=1)
+        ).permute(1, 0).reshape(DIM, -1, 1).permute(1, 2, 0)
+
+    fig = plt.figure(figsize=(15, 5.4), dpi=150)
+    axes = [fig.add_subplot(131, projection='3d'),
+            fig.add_subplot(132, projection='3d'),
+            fig.add_subplot(133, projection='3d')]
+
+    X_np = X[:, 0].cpu().numpy()
+    Y_np = Y.cpu().numpy()
+    T_XZ_np = T_XZ[:, 0].cpu().numpy()
+
+    for ax in axes:
+        ax.set_xlim(-2.5, 2.5)
+        ax.set_ylim(-2.5, 2.5)
+        ax.set_zlim(-2.5, 2.5)
+        ax.grid(True)
+
+    axes[0].scatter(X_np[:, 0], X_np[:, 1], X_np[:, 2], c='darkseagreen', edgecolors='black')
+    axes[1].scatter(Y_np[:, 0], Y_np[:, 1], Y_np[:, 2], c='peru', edgecolors='black')
+    axes[2].scatter(T_XZ_np[:, 0], T_XZ_np[:, 1], T_XZ_np[:, 2], c='wheat', edgecolors='black')
+
+    axes[0].set_title(r'Input $x\sim\mathbb{P}$', fontsize=16, pad=10)
+    axes[1].set_title(r'Target $y\sim\mathbb{Q}$', fontsize=16, pad=10)
+    axes[2].set_title(r'Fitted $T(x,z)_{\#}(\mathbb{P}\times\mathbb{S})$', fontsize=16, pad=10)
+
+    fig.tight_layout()
+    return fig, axes
