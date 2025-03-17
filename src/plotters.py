@@ -5,7 +5,7 @@ from matplotlib import collections as mc
 from .tools import ewma, freeze
 import ot
 import seaborn as sns
-
+from sklearn.decomposition import PCA
 import torch
 import gc
 
@@ -340,3 +340,90 @@ def plot_1D_discrete(X_sampler, Y_sampler, num_samples=1024):
     fig.tight_layout(pad=0.01)
     
     return fig, axes
+
+# 5D implementation
+def plot_generated_2D_PCA(data_5D, labels=None):
+    """
+    Reduce 5D data to 2D using PCA and plot the results.
+    :param data_5D: numpy array of shape (n_samples, 5)
+    :param labels: Optional, numpy array of shape (n_samples,) for coloring points
+    """
+    pca = PCA(n_components=2)
+    data_2D = pca.fit_transform(data_5D)
+    
+    plt.figure(figsize=(8, 6))
+    scatter = plt.scatter(data_2D[:, 0], data_2D[:, 1], c=labels, cmap='viridis', alpha=0.7)
+    plt.xlabel('PCA Component 1')
+    plt.ylabel('PCA Component 2')
+    plt.title('PCA Projection of 5D Data to 2D')
+    if labels is not None:
+        plt.colorbar(scatter, label='Labels')
+    plt.show()
+
+def plot_generated_2D_projection(data_5D, dim_x, dim_y, labels=None):
+    """
+    Directly project 5D data to 2D using specified dimensions.
+    :param data_5D: numpy array of shape (n_samples, 5)
+    :param dim_x: int, index of the first dimension to use (0-4)
+    :param dim_y: int, index of the second dimension to use (0-4)
+    :param labels: Optional, numpy array of shape (n_samples,) for coloring points
+    """
+    data_2D = data_5D[:, [dim_x, dim_y]]
+    
+    plt.figure(figsize=(8, 6))
+    scatter = plt.scatter(data_2D[:, 0], data_2D[:, 1], c=labels, cmap='viridis', alpha=0.7)
+    plt.xlabel(f'Dimension {dim_x}')
+    plt.ylabel(f'Dimension {dim_y}')
+    plt.title(f'Projection of 5D Data onto Dimensions {dim_x} & {dim_y}')
+    if labels is not None:
+        plt.colorbar(scatter, label='Labels')
+    plt.show()
+
+def plot_bar_and_stochastic_2D_PCA(data_5D, stochastic_values, labels=None):
+    """
+    Reduce 5D data to 2D using PCA and plot the results with stochastic values.
+    :param data_5D: numpy array of shape (n_samples, 5)
+    :param stochastic_values: numpy array of shape (n_samples,) for bar heights
+    :param labels: Optional, numpy array of shape (n_samples,) for coloring points
+    """
+    pca = PCA(n_components=2)
+    data_2D = pca.fit_transform(data_5D)
+    
+    plt.figure(figsize=(8, 6))
+    scatter = plt.scatter(data_2D[:, 0], data_2D[:, 1], c=labels, cmap='viridis', alpha=0.7)
+    plt.xlabel('PCA Component 1')
+    plt.ylabel('PCA Component 2')
+    plt.title('PCA Projection with Stochastic Values')
+    if labels is not None:
+        plt.colorbar(scatter, label='Labels')
+    
+    # Add bar plot effect
+    for i, (x, y, h) in enumerate(zip(data_2D[:, 0], data_2D[:, 1], stochastic_values)):
+        plt.vlines(x, ymin=y, ymax=y + h, colors='red', alpha=0.6)
+    
+    plt.show()
+
+def plot_bar_and_stochastic_2D_projection(data_5D, dim_x, dim_y, stochastic_values, labels=None):
+    """
+    Directly project 5D data to 2D using specified dimensions and plot with stochastic values.
+    :param data_5D: numpy array of shape (n_samples, 5)
+    :param dim_x: int, index of the first dimension to use (0-4)
+    :param dim_y: int, index of the second dimension to use (0-4)
+    :param stochastic_values: numpy array of shape (n_samples,) for bar heights
+    :param labels: Optional, numpy array of shape (n_samples,) for coloring points
+    """
+    data_2D = data_5D[:, [dim_x, dim_y]]
+    
+    plt.figure(figsize=(8, 6))
+    scatter = plt.scatter(data_2D[:, 0], data_2D[:, 1], c=labels, cmap='viridis', alpha=0.7)
+    plt.xlabel(f'Dimension {dim_x}')
+    plt.ylabel(f'Dimension {dim_y}')
+    plt.title(f'Projection onto Dimensions {dim_x} & {dim_y} with Stochastic Values')
+    if labels is not None:
+        plt.colorbar(scatter, label='Labels')
+    
+    # Add bar plot effect
+    for i, (x, y, h) in enumerate(zip(data_2D[:, 0], data_2D[:, 1], stochastic_values)):
+        plt.vlines(x, ymin=y, ymax=y + h, colors='red', alpha=0.6)
+    
+    plt.show()
